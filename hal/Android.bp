@@ -50,6 +50,9 @@ target_board_platform_cc_library_shared {
     }) + select(soong_config_variable("qtiaudio", "feature_sound_trigger"), {
         "true": ["audio_extn/soundtrigger.c"],
         default: [],
+    }) + select(soong_config_variable("qtiaudio", "feature_tfa98xx_amplifier"), {
+        "true": ["audio_extn/tfa98xx_feedback.c"],
+        default: [],
     }),
 
     cflags: [
@@ -73,6 +76,9 @@ target_board_platform_cc_library_shared {
         default: [],
     }) + select(soong_config_variable("qtiaudio", "feature_sound_trigger"), {
         "true": ["-DSOUND_TRIGGER_ENABLED"],
+        default: [],
+    }) + select(soong_config_variable("qtiaudio", "feature_tfa98xx_amplifier"), {
+        "true": ["-DTFA98XX_ENABLED"],
         default: [],
     }) + select(soong_config_variable("ANDROID", "target_board_platform"), {
         "sdm660": [

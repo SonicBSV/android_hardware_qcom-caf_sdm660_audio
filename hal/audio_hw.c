@@ -1567,6 +1567,7 @@ int enable_snd_device(struct audio_device *adev,
         }
         audio_extn_dev_arbi_acquire(snd_device);
         audio_route_apply_and_update_path(adev->audio_route, device_name);
+        audio_extn_tfa98xx_start_feedback(adev, snd_device);
         amplifier_set_feedback(adev, snd_device, true);
 
         if (SND_DEVICE_OUT_HEADPHONES == snd_device &&
@@ -1639,6 +1640,7 @@ int disable_snd_device(struct audio_device *adev,
             platform_set_speaker_gain_in_combo(adev, snd_device, false);
         } else {
             audio_route_reset_and_update_path(adev->audio_route, device_name);
+            audio_extn_tfa98xx_stop_feedback(adev, snd_device);
             amplifier_enable_devices(snd_device, false);
         }
 
