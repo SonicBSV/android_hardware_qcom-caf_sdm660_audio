@@ -76,8 +76,8 @@ cc_library_shared {
     include_dirs: [
         "external/tinyalsa/include",
         "external/tinycompress/include",
-        "hardware/qcom-caf/msm8953/audio/hal",
-        "hardware/qcom-caf/msm8953/audio/hal/audio_extn",
+        "hardware/qcom-caf/sdm660/audio/hal",
+        "hardware/qcom-caf/sdm660/audio/hal/audio_extn",
         "system/media/audio_route/include",
         "system/media/audio_utils/include",
     ],
