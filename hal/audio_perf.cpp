@@ -21,7 +21,7 @@
 #include <utils/Log.h>
 #include <utils/Mutex.h>
 
-#include <android/hardware/power/1.2/IPower.h>
+#include <android/hardware/power/1.3/IPower.h>
 #include <aidl/android/hardware/power/Boost.h>
 #include <aidl/android/hardware/power/IPower.h>
 #include <aidl/android/hardware/power/Mode.h>
@@ -29,8 +29,8 @@
 
 #include "audio_perf.h"
 
-// Protect gPowerHal_1_2_ and gPowerHal_Aidl_
-static android::sp<android::hardware::power::V1_2::IPower> gPowerHal_1_2_;
+// Protect gPowerHal_1_3_ and gPowerHal_Aidl_
+static android::sp<android::hardware::power::V1_3::IPower> gPowerHal_1_3_;
 static std::shared_ptr<aidl::android::hardware::power::IPower> gPowerHal_Aidl_;
 static std::mutex gPowerHalMutex;
 static constexpr int kDefaultBoostDurationMs = 2000;
@@ -41,7 +41,7 @@ static const std::string kInstance =
 
 enum hal_version {
     NONE,
-    HIDL_1_2,
+    HIDL_1_3,
     AIDL,
 };
 
@@ -56,13 +56,13 @@ static hal_version connectPowerHalLocked() {
 
     if (gPowerHalHidlExists) {
         // (re)connect if handle is null
-        if (!gPowerHal_1_2_) {
-            gPowerHal_1_2_ =
-                    android::hardware::power::V1_2::IPower::getService();
+        if (!gPowerHal_1_3_) {
+            gPowerHal_1_3_ =
+                    android::hardware::power::V1_3::IPower::getService();
         }
-        if (gPowerHal_1_2_) {
+        if (gPowerHal_1_3_) {
             ALOGV("Successfully connected to Power Hal Hidl service.");
-            return HIDL_1_2;
+            return HIDL_1_3;
         } else {
             // no more try on this handle
             gPowerHalHidlExists = false;
@@ -93,15 +93,15 @@ bool audio_streaming_hint_start() {
     switch(connectPowerHalLocked()) {
         case NONE:
             return false;
-        case HIDL_1_2:
+        case HIDL_1_3:
             {
-                auto ret = gPowerHal_1_2_->powerHintAsync_1_2(
-                    android::hardware::power::V1_2::PowerHint::AUDIO_STREAMING,
+                auto ret = gPowerHal_1_3_->powerHintAsync_1_3(
+                    android::hardware::power::V1_3::PowerHint::AUDIO_STREAMING,
                     1);
                 if (!ret.isOk()) {
                     ALOGE("powerHint failed, error: %s",
                           ret.description().c_str());
-                    gPowerHal_1_2_ = nullptr;
+                    gPowerHal_1_3_ = nullptr;
                     return false;
                 }
                 return true;
@@ -130,15 +130,15 @@ bool audio_streaming_hint_end() {
     switch(connectPowerHalLocked()) {
         case NONE:
             return false;
-        case HIDL_1_2:
+        case HIDL_1_3:
             {
-                auto ret = gPowerHal_1_2_->powerHintAsync_1_2(
-                    android::hardware::power::V1_2::PowerHint::AUDIO_STREAMING,
+                auto ret = gPowerHal_1_3_->powerHintAsync_1_3(
+                    android::hardware::power::V1_3::PowerHint::AUDIO_STREAMING,
                     0);
                 if (!ret.isOk()) {
                     ALOGE("powerHint failed, error: %s",
                           ret.description().c_str());
-                    gPowerHal_1_2_ = nullptr;
+                    gPowerHal_1_3_ = nullptr;
                     return false;
                 }
                 return true;
@@ -167,15 +167,15 @@ bool audio_low_latency_hint_start() {
     switch(connectPowerHalLocked()) {
         case NONE:
             return false;
-        case HIDL_1_2:
+        case HIDL_1_3:
             {
-                auto ret = gPowerHal_1_2_->powerHintAsync_1_2(
-                    android::hardware::power::V1_2::PowerHint::AUDIO_LOW_LATENCY,
+                auto ret = gPowerHal_1_3_->powerHintAsync_1_3(
+                    android::hardware::power::V1_3::PowerHint::AUDIO_LOW_LATENCY,
                     1);
                 if (!ret.isOk()) {
                     ALOGE("powerHint failed, error: %s",
                           ret.description().c_str());
-                    gPowerHal_1_2_ = nullptr;
+                    gPowerHal_1_3_ = nullptr;
                     return false;
                 }
                 return true;
@@ -204,15 +204,15 @@ bool audio_low_latency_hint_end() {
     switch(connectPowerHalLocked()) {
         case NONE:
             return false;
-        case HIDL_1_2:
+        case HIDL_1_3:
             {
-                auto ret = gPowerHal_1_2_->powerHintAsync_1_2(
-                    android::hardware::power::V1_2::PowerHint::AUDIO_LOW_LATENCY,
+                auto ret = gPowerHal_1_3_->powerHintAsync_1_3(
+                    android::hardware::power::V1_3::PowerHint::AUDIO_LOW_LATENCY,
                     0);
                 if (!ret.isOk()) {
                     ALOGE("powerHint failed, error: %s",
                           ret.description().c_str());
-                    gPowerHal_1_2_ = nullptr;
+                    gPowerHal_1_3_ = nullptr;
                     return false;
                 }
                 return true;

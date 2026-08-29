@@ -42,7 +42,6 @@
 #include <cutils/str_parms.h>
 #include <cutils/list.h>
 #include <cutils/hashmap.h>
-#include <hardware/audio_amplifier.h>
 #include <hardware/audio.h>
 #include <tinyalsa/asoundlib.h>
 #include <tinycompress/tinycompress.h>
@@ -281,15 +280,10 @@ enum {
 
     /*In Car Communication Usecase*/
     USECASE_ICC_CALL,
-
-    /* Elliptic Ultrasound */
-    USECASE_AUDIO_ULTRASOUND_RX,
-    USECASE_AUDIO_ULTRASOUND_TX,
-
     AUDIO_USECASE_MAX
 };
 
-const char * const use_case_table[AUDIO_USECASE_MAX];
+extern const char * const use_case_table[AUDIO_USECASE_MAX];
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -798,8 +792,6 @@ struct audio_device {
     Hashmap *io_streams_map;
     bool a2dp_started;
     bool ha_proxy_enable;
-
-    amplifier_device_t *amp;
 };
 
 struct audio_patch_record {
