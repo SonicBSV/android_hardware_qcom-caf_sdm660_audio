@@ -502,7 +502,7 @@ int voice_check_and_set_incall_rec_usecase(struct audio_device *adev,
         switch (in->source) {
         case AUDIO_SOURCE_VOICE_UPLINK:
             if (audio_extn_compr_cap_enabled() &&
-                audio_extn_compr_cap_format_supported(in->config.format)) {
+                audio_extn_compr_cap_format_supported((audio_format_t)in->config.format)) {
                 in->usecase = USECASE_INCALL_REC_UPLINK_COMPRESS;
             } else
                 in->usecase = USECASE_INCALL_REC_UPLINK;
@@ -510,7 +510,7 @@ int voice_check_and_set_incall_rec_usecase(struct audio_device *adev,
             break;
         case AUDIO_SOURCE_VOICE_DOWNLINK:
             if (audio_extn_compr_cap_enabled() &&
-                audio_extn_compr_cap_format_supported(in->config.format)) {
+                audio_extn_compr_cap_format_supported((audio_format_t)in->config.format)) {
                 in->usecase = USECASE_INCALL_REC_DOWNLINK_COMPRESS;
             } else
                 in->usecase = USECASE_INCALL_REC_DOWNLINK;
@@ -518,7 +518,7 @@ int voice_check_and_set_incall_rec_usecase(struct audio_device *adev,
             break;
         case AUDIO_SOURCE_VOICE_CALL:
             if (audio_extn_compr_cap_enabled() &&
-                audio_extn_compr_cap_format_supported(in->config.format)) {
+                audio_extn_compr_cap_format_supported((audio_format_t)in->config.format)) {
                 in->usecase = USECASE_INCALL_REC_UPLINK_AND_DOWNLINK_COMPRESS;
             } else
                 in->usecase = USECASE_INCALL_REC_UPLINK_AND_DOWNLINK;
@@ -690,7 +690,12 @@ int voice_set_volume(struct audio_device *adev, float volume)
     int vol, err = 0;
 
     adev->voice.volume = volume;
-    if (adev->mode == AUDIO_MODE_IN_CALL) {
+
+    /* 
+     * ИСПРАВЛЕНИЕ: Проверяем и режим IN_CALL, и флаг активности сессии in_call.
+     * Это гарантирует отработку громкости в VoLTE, VoWiFi и при дозвоне.
+     */
+    if (adev->mode == AUDIO_MODE_IN_CALL || adev->voice.in_call) {
         if (volume < 0.0) {
             volume = 0.0;
         } else if (volume > 1.0) {
@@ -699,16 +704,15 @@ int voice_set_volume(struct audio_device *adev, float volume)
 
         vol = lrint(volume * 100.0);
 
-        // Voice volume levels from android are mapped to driver volume levels as follows.
-        // 0 -> 5, 20 -> 4, 40 ->3, 60 -> 2, 80 -> 1, 100 -> 0
-        // So adjust the volume to get the correct volume index in driver
-        vol = 100 - vol;
-
+        /* 
+         * Передаем чистый процент (0..100) напрямую в platform_set_voice_volume.
+         * Убрана деструктивная двойная инверсия (vol = 100 - vol).
+         */
         err = platform_set_voice_volume(adev->platform, vol);
     }
+
     if (adev->mode == AUDIO_MODE_IN_COMMUNICATION)
         err = voice_extn_compress_voip_set_volume(adev, volume);
-
 
     return err;
 }
@@ -725,6 +729,12 @@ int voice_start_call(struct audio_device *adev)
     if (ret == -ENOSYS) {
         ret = voice_start_usecase(adev, USECASE_VOICE_CALL);
     }
+
+    /* 
+     * КРИТИЧЕСКИЙ ФИКС: Принудительно применяем сохраненную громкость пользователя
+     * сразу при старте вызова, чтобы модем не орал на дефолтных 100%.
+     */
+    voice_set_volume(adev, adev->voice.volume);
 
     return ret;
 }

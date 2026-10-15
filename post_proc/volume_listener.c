@@ -236,14 +236,13 @@ static bool headset_cal_enabled;
 static bool verify_context(vol_listener_context_t *context)
 {
     if (context->stream_type == VC_CALL &&
-        headset_cal_enabled &&
         (context->dev_id == AUDIO_DEVICE_OUT_EARPIECE ||
-        context->dev_id == AUDIO_DEVICE_OUT_WIRED_HEADSET ||
-        context->dev_id == AUDIO_DEVICE_OUT_WIRED_HEADPHONE))
+         context->dev_id == AUDIO_DEVICE_OUT_WIRED_HEADSET ||
+         context->dev_id == AUDIO_DEVICE_OUT_WIRED_HEADPHONE))
         return true;
     else {
-        if (context->dev_id & AUDIO_DEVICE_OUT_SPEAKER ||
-            context->dev_id & AUDIO_DEVICE_OUT_SPEAKER_SAFE)
+        if (context->dev_id == AUDIO_DEVICE_OUT_SPEAKER ||
+            context->dev_id == AUDIO_DEVICE_OUT_SPEAKER_SAFE)
             return true;
         else
             return false;
@@ -286,6 +285,12 @@ static void check_and_set_gain_dep_cal()
     bool sum_energy_used = false;
     int max_level = 0;
     vol_listener_context_t *context = NULL;
+
+    // --- BEGIN RETRY LOGIC VARIABLES ---
+    static int last_failed_cal_level = -1;
+    static float last_failed_vol = -1.0;
+    // --- END RETRY LOGIC VARIABLES ---
+
     if (dumping_enabled) {
         dump_list_l();
     }
@@ -306,6 +311,31 @@ static void check_and_set_gain_dep_cal()
     if (sum_energy_used) {
         new_vol = fmin(sqrt(sum_energy), 1.0);
     }
+
+    // --- BEGIN RETRY ATTEMPT ---
+    // Если есть ранее неудачная попытка и громкость не изменилась, пробуем ещё раз
+    if (last_failed_cal_level != -1 && new_vol == last_failed_vol) {
+        ALOGV("%s: Retrying failed cal level %d for volume %f", __func__,
+              last_failed_cal_level, new_vol);
+        if (send_gain_dep_cal != NULL && send_gain_dep_cal(last_failed_cal_level)) {
+            ALOGV("%s: Retry successful, setting current_gain_dep_cal_level=%d current_vol=%f",
+                  __func__, last_failed_cal_level, new_vol);
+            current_gain_dep_cal_level = last_failed_cal_level;
+            current_vol = new_vol;
+            last_failed_cal_level = -1;
+            last_failed_vol = -1.0;
+        } else {
+            ALOGE("%s: Retry failed again for cal level %d", __func__,
+                  last_failed_cal_level);
+        }
+    } else if (last_failed_cal_level != -1) {
+        // Громкость изменилась — сбрасываем сохранённую неудачную попытку
+        ALOGV("%s: Volume changed, clearing pending failed cal level %d", __func__,
+              last_failed_cal_level);
+        last_failed_cal_level = -1;
+        last_failed_vol = -1.0;
+    }
+    // --- END RETRY ATTEMPT ---
 
     if (new_vol != current_vol) {
         ALOGV("%s:: Change in decision :: current volume is %f new volume is %f",
@@ -339,6 +369,10 @@ static void check_and_set_gain_dep_cal()
                     // decision made .. send new level now
                     if (!send_gain_dep_cal(gain_dep_cal_level)) {
                         ALOGE("%s: Failed to set gain dep cal level", __func__);
+                        // --- ЗАПОМИНАЕМ НЕУДАЧУ ДЛЯ ПОВТОРА ---
+                        last_failed_cal_level = gain_dep_cal_level;
+                        last_failed_vol = new_vol;
+                        // -------------------------------------
                     } else {
                         // Success in setting the gain dep cal level, store new level and Volume
                         if (dumping_enabled) {
@@ -352,6 +386,10 @@ static void check_and_set_gain_dep_cal()
                         }
                         current_gain_dep_cal_level = gain_dep_cal_level;
                         current_vol = new_vol;
+                        // --- СБРАСЫВАЕМ СОХРАНЁННУЮ НЕУДАЧУ, ТАК КАК УСПЕШНО ПРИМЕНИЛИ ---
+                        last_failed_cal_level = -1;
+                        last_failed_vol = -1.0;
+                        // -----------------------------------------------------------------
                     }
                 } else {
                     if (dumping_enabled) {

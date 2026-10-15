@@ -343,7 +343,7 @@ struct platform_data {
     /* Audio calibration related functions */
     void                       *acdb_handle;
     int                        voice_feature_set;
-    acdb_init_t                acdb_init;
+    acdb_init_v2_t             acdb_init;
     acdb_init_v3_t             acdb_init_v3;
     acdb_init_v4_t             acdb_init_v4;
     acdb_deallocate_t          acdb_deallocate;
@@ -1404,6 +1404,7 @@ static struct name_to_index usecase_name_index[AUDIO_USECASE_MAX] = {
     {TO_NAME_INDEX(USECASE_VOWLAN_CALL)},
     {TO_NAME_INDEX(USECASE_VOICEMMODE1_CALL)},
     {TO_NAME_INDEX(USECASE_VOICEMMODE2_CALL)},
+    {TO_NAME_INDEX(USECASE_COMPRESS_VOIP_CALL)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_UPLINK)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_DOWNLINK)},
     {TO_NAME_INDEX(USECASE_INCALL_REC_UPLINK_AND_DOWNLINK)},
@@ -3719,10 +3720,10 @@ void *platform_init(struct audio_device *adev)
             ALOGE("%s: dlsym error %s for acdb_loader_init_v3", __func__, dlerror());
         }
 
-        my_data->acdb_init = (acdb_init_t)dlsym(my_data->acdb_handle,
-                                                     "acdb_loader_init_v3");
+        my_data->acdb_init = (acdb_init_v2_t)dlsym(my_data->acdb_handle,
+                                                     "acdb_loader_init_v2");
         if (my_data->acdb_init == NULL) {
-            ALOGE("%s: dlsym error %s for acdb_loader_init_v3", __func__, dlerror());
+            ALOGE("%s: dlsym error %s for acdb_loader_init_v2", __func__, dlerror());
             goto acdb_init_fail;
         }
 
@@ -4575,12 +4576,12 @@ bool platform_check_backends_match(snd_device_t snd_device1, snd_device_t snd_de
                 platform_get_snd_device_name(snd_device1),
                 platform_get_snd_device_name(snd_device2));
 
-    if ((snd_device1 < SND_DEVICE_MIN) || (snd_device1 >= SND_DEVICE_OUT_END)) {
+    if ((snd_device1 < SND_DEVICE_MIN) || (snd_device1 >= SND_DEVICE_MAX)) {
         ALOGV("%s: Invalid snd_device1 = %s", __func__,
                 platform_get_snd_device_name(snd_device1));
         return false;
     }
-    if ((snd_device2 < SND_DEVICE_MIN) || (snd_device2 >= SND_DEVICE_OUT_END)) {
+    if ((snd_device2 < SND_DEVICE_MIN) || (snd_device2 >= SND_DEVICE_MAX)) {
         ALOGV("%s: Invalid snd_device2 = %s", __func__,
                 platform_get_snd_device_name(snd_device2));
         return false;
@@ -5491,8 +5492,10 @@ int platform_send_audio_calibration(void *platform, struct audio_usecase *usecas
     if (voice_is_in_call_or_call_screen(my_data->adev) && (usecase->type == PCM_CAPTURE))
         is_incall_rec_usecase = voice_is_in_call_rec_stream(usecase->stream.in);
 
-    if (compare_device_type(&usecase->device_list, AUDIO_DEVICE_OUT_BUS))
-        is_bus_dev_usecase = true;
+    if (usecase->type != PCM_CAPTURE) {
+        if (compare_device_type(&usecase->device_list, AUDIO_DEVICE_OUT_BUS))
+            is_bus_dev_usecase = true;
+    }
 
     if (usecase->type == PCM_PLAYBACK)
         snd_device = usecase->out_snd_device;
@@ -5939,14 +5942,23 @@ int platform_set_voice_volume(void *platform, int volume)
     const char *mixer_ctl_name = "Voice Rx Gain";
     const char *mute_mixer_ctl_name = "Voice Rx Device Mute";
     int vol_index = 0, ret = 0;
-    long set_values[ ] = {0,
-                          ALL_SESSION_VSID,
-                          DEFAULT_VOLUME_RAMP_DURATION_MS};
+    long set_values[] = {0,
+                         ALL_SESSION_VSID,
+                         DEFAULT_VOLUME_RAMP_DURATION_MS};
 
-    // Voice volume levels are mapped to adsp volume levels as follows.
-    // 100 -> 5, 80 -> 4, 60 -> 3, 40 -> 2, 20 -> 1  0 -> 0
-    // But this values don't changed in kernel. So, below change is need.
-    vol_index = (int)percent_to_index(volume, MIN_VOL_INDEX, my_data->max_vol_index);
+    /* Защита от нулевого max_vol_index */
+    int max_index = (my_data->max_vol_index > 0) ? my_data->max_vol_index : 5;
+
+    /* 
+     * ИСПРАВЛЕНИЕ ИНВЕРСИИ QUALCOMM:
+     * В Q6 CVD шаг 0 = МАКСИМУМ (0 dB), а шаг 5 = МИНИМУМ (-20 dB).
+     * Инвертируем процент (100 - volume), чтобы качелька работала в правильную сторону!
+     */
+    vol_index = ((100 - volume) * max_index) / 100;
+    
+    if (vol_index < 0) vol_index = 0;
+    if (vol_index > max_index) vol_index = max_index;
+
     set_values[0] = vol_index;
 
     ctl = mixer_get_ctl_by_name(adev->mixer, mixer_ctl_name);
@@ -5955,24 +5967,17 @@ int platform_set_voice_volume(void *platform, int volume)
               __func__, mixer_ctl_name);
         return -EINVAL;
     }
-    ALOGV("%s: Setting voice volume index: %ld", __func__, set_values[0]);
+    ALOGI("%s: Applying Voice Volume: %d%% -> QCOM Attenuation Step [%ld / %d]", 
+          __func__, volume, set_values[0], max_index);
     mixer_ctl_set_array(ctl, set_values, ARRAY_SIZE(set_values));
 
-    // Send mute command in case volume index is max since indexes are inverted
-    // for mixer controls.
-    if (vol_index == my_data->max_vol_index)
-        set_values[0] = 1;
-    else
-        set_values[0] = 0;
+    /* Мьютим устройство только если звук сброшен в абсолютный 0 */
+    set_values[0] = (volume == 0) ? 1 : 0;
 
     ctl = mixer_get_ctl_by_name(adev->mixer, mute_mixer_ctl_name);
-    if (!ctl) {
-        ALOGE("%s: Could not get ctl for mixer cmd - %s",
-              __func__, mute_mixer_ctl_name);
-        return -EINVAL;
+    if (ctl) {
+        mixer_ctl_set_array(ctl, set_values, ARRAY_SIZE(set_values));
     }
-    ALOGV("%s: Setting RX Device Mute to: %ld", __func__, set_values[0]);
-    mixer_ctl_set_array(ctl, set_values, ARRAY_SIZE(set_values));
 
     if (my_data->csd != NULL) {
         ret = my_data->csd->volume(ALL_SESSION_VSID, volume,
@@ -5981,6 +5986,7 @@ int platform_set_voice_volume(void *platform, int volume)
             ALOGE("%s: csd_volume error %d", __func__, ret);
         }
     }
+
     return ret;
 }
 
@@ -7427,7 +7433,22 @@ snd_device_t platform_get_input_snd_device(void *platform,
                 if ((my_data->fluence_type & FLUENCE_DUAL_MIC) &&
                     (my_data->source_mic_type & SOURCE_DUAL_MIC) &&
                     (channel_count == 2))
-                    snd_device = SND_DEVICE_IN_HANDSET_DMIC_STEREO;
+                    switch (adev->camera_orientation) {
+                        case CAMERA_BACK_LANDSCAPE:
+                        case CAMERA_FRONT_INVERT_LANDSCAPE:
+                            snd_device = SND_DEVICE_IN_SPEAKER_DMIC_STEREO;
+                            break;
+                        case CAMERA_BACK_INVERT_LANDSCAPE:
+                        case CAMERA_BACK_PORTRAIT:
+                        case CAMERA_FRONT_LANDSCAPE:
+                        case CAMERA_FRONT_PORTRAIT:
+                            snd_device = SND_DEVICE_IN_HANDSET_DMIC_STEREO;
+                            break;
+                        default:
+                            ALOGW("%s: invalid camera orientation %08x", __func__, adev->camera_orientation);
+                            snd_device = SND_DEVICE_IN_HANDSET_DMIC_STEREO;
+                            break;
+                    }
                 else
                     snd_device = SND_DEVICE_IN_CAMCORDER_MIC;
             }

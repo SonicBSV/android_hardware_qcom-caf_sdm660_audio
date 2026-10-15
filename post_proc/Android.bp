@@ -1,0 +1,161 @@
+cc_library_shared {
+    name: "libqcompostprocbundle",
+    relative_install_path: "soundfx",
+    vendor: true,
+    owner: "qti",
+
+    srcs: [
+        "bundle.c",
+        "equalizer.c",
+        "bass_boost.c",
+        "virtualizer.c",
+        "reverb.c",
+        "effect_api.c",
+        "effect_util.c",
+    ],
+
+    cflags: [
+        "-fvisibility=hidden",
+        "-Werror",
+        "-DDTS_EAGLE",
+    ] + select(soong_config_variable("qtiaudio", "feature_gki"), {
+        "true": ["-DAUDIO_GKI_ENABLED"],
+        default: [],
+    }) + select(soong_config_variable("qtiaudio", "feature_instance_id"), {
+        "true": ["-DINSTANCE_ID_ENABLED"],
+        default: [],
+    }) + select(soong_config_variable("qtiaudio", "feature_proxy_device"), {
+        "true": ["-DAFE_PROXY_ENABLED"],
+        default: [],
+    }),
+
+    include_dirs: [
+        "external/tinyalsa/include",
+        "system/media/audio_effects/include",
+    ],
+
+    header_libs: [
+        "libhardware_headers",
+        "libsystem_headers",
+        "libutils_headers",
+        "qti_kernel_headers",
+    ],
+
+    shared_libs: [
+        "libcutils",
+        "libdl",
+        "liblog",
+        "libtinyalsa",
+    ],
+
+    sanitize: {
+        integer_overflow: true,
+    },
+}
+
+cc_library_shared {
+    name: "libvolumelistener",
+    relative_install_path: "soundfx",
+    vendor: true,
+    owner: "qti",
+
+    srcs: ["volume_listener.c"],
+
+    cflags: [
+        "-fvisibility=hidden",
+        "-Werror",
+    ] + select(soong_config_variable("ANDROID", "target_board_platform"), {
+        any @ flag_val: [
+            "-DLIB_AUDIO_HAL=/vendor/lib/hw/audio.primary." + flag_val + ".so",
+            "-DLIB64_AUDIO_HAL=/vendor/lib64/hw/audio.primary." + flag_val + ".so",
+        ],
+        default: [
+            "-DLIB_AUDIO_HAL=/vendor/lib/hw/audio.primary.qcom.so",
+            "-DLIB64_AUDIO_HAL=/vendor/lib64/hw/audio.primary.qcom.so",
+        ],
+    }),
+
+    include_dirs: [
+        "external/tinyalsa/include",
+        "external/tinycompress/include",
+        "hardware/qcom-caf/sdm660/audio/hal",
+        "hardware/qcom-caf/sdm660/audio/hal/audio_extn",
+        "system/media/audio_route/include",
+        "system/media/audio_utils/include",
+    ],
+
+    header_libs: [
+        "libhardware_headers",
+        "qti_kernel_headers",
+    ],
+
+    shared_libs: [
+        "libcutils",
+        "libdl",
+        "liblog",
+    ],
+
+    sanitize: {
+        integer_overflow: true,
+    },
+}
+
+// AUDIO_FEATURE_ENABLED_HW_ACCELERATED_EFFECTS := false — выключен
+cc_library_static {
+    name: "libhwacceffectswrapper",
+    vendor: true,
+    enabled: false,
+
+    srcs: ["EffectsHwAcc.cpp"],
+
+    cflags: [
+        "-fvisibility=hidden",
+        "-Werror",
+    ],
+
+    include_dirs: ["system/media/audio_effects/include"],
+
+    header_libs: [
+        "libhardware_headers",
+        "libsystem_headers",
+        "libutils_headers",
+    ],
+
+    shared_libs: [
+        "liblog",
+        "libeffects",
+    ],
+}
+
+// AUDIO_FEATURE_ENABLED_MAXX_AUDIO := false — выключен
+cc_library_shared {
+    name: "libmalistener",
+    relative_install_path: "soundfx",
+    vendor: true,
+    owner: "google",
+    enabled: false,
+
+    srcs: ["ma_listener.c"],
+
+    cflags: select(soong_config_variable("ANDROID", "target_board_platform"), {
+        any @ flag_val: ["-DHAL_LIB_NAME=audio.primary." + flag_val + ".so"],
+        default: ["-DHAL_LIB_NAME=audio.primary.qcom.so"],
+    }),
+
+    include_dirs: [
+        "system/media/audio/include/system",
+        "system/media/audio_effects/include",
+        "hardware/qcom-caf/sdm660/audio/hal",
+    ],
+
+    header_libs: [
+        "libhardware_headers",
+        "libsystem_headers",
+    ],
+
+    shared_libs: [
+        "libcutils",
+        "liblog",
+        "libdl",
+    ],
+}

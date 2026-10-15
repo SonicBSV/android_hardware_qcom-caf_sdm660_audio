@@ -33,8 +33,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define LOG_TAG "audio_hw_primary"
@@ -1552,6 +1550,7 @@ int enable_snd_device(struct audio_device *adev,
         }
         audio_extn_dev_arbi_acquire(snd_device);
         audio_route_apply_and_update_path(adev->audio_route, device_name);
+        audio_extn_tfa98xx_start_feedback(adev, snd_device);
 
         if (SND_DEVICE_OUT_HEADPHONES == snd_device &&
             !adev->native_playback_enabled &&
@@ -1623,6 +1622,7 @@ int disable_snd_device(struct audio_device *adev,
             platform_set_speaker_gain_in_combo(adev, snd_device, false);
         } else {
             audio_route_reset_and_update_path(adev->audio_route, device_name);
+            audio_extn_tfa98xx_stop_feedback(adev, snd_device);
         }
 
         if (snd_device == SND_DEVICE_OUT_BT_A2DP) {
@@ -6864,7 +6864,7 @@ static size_t in_get_buffer_size(const struct audio_stream *stream)
     if(in->usecase == USECASE_COMPRESS_VOIP_CALL)
         return voice_extn_compress_voip_in_get_buffer_size(in);
     else if(audio_extn_compr_cap_usecase_supported(in->usecase))
-        return audio_extn_compr_cap_get_buffer_size(in->config.format);
+        return audio_extn_compr_cap_get_buffer_size((audio_format_t)in->config.format);
     else if(audio_extn_cin_attached_usecase(in))
         return audio_extn_cin_get_buffer_size(in);
 
@@ -9915,7 +9915,7 @@ static void adev_close_input_stream(struct audio_hw_device *dev,
     }
 
     if (audio_extn_compr_cap_enabled() &&
-            audio_extn_compr_cap_format_supported(in->config.format))
+            audio_extn_compr_cap_format_supported((audio_format_t)in->config.format))
         audio_extn_compr_cap_deinit();
 
     if (audio_extn_cin_attached_usecase(in))
